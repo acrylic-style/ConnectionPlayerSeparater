@@ -2,11 +2,11 @@
 
 ## config.yml
 ```yml
-Servers:
+Servers: # ロビーサーバーのリスト
   - lobby1
   - lobby2
   - lobby3
   - lobby999999
-forcedHosts:
+forcedHosts: # A/CNAMEレコード : サーバー
   life.azisaba.net: life
 ```
