@@ -85,6 +85,6 @@ class ConnectionPlayerSeparator : Plugin(), Listener {
             .apply { isAccessible = true }
             .get(config.getSection("forcedHosts")) as Map<String, Any?>
         forcedHosts.clear()
-        forcedHosts.putAll(forcedHostsIn.filterValues { it != null }.mapValues { it.toString().replace(".*=(.*)".toRegex(), "$1") })
+        forcedHosts.putAll(forcedHostsIn.filterValues { it != null }.mapValues { (_, value) -> value.toString() })
     }
 }
