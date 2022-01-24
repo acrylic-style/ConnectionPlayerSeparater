@@ -1,26 +1,26 @@
 package net.azisaba.connectionplayerseparator
 
-import net.azisaba.connectionplayerseparator.Util.send
-import net.md_5.bungee.api.CommandSender
-import net.md_5.bungee.api.ChatColor
-import net.md_5.bungee.api.plugin.Command
+import com.velocitypowered.api.command.SimpleCommand
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.NamedTextColor
 
-object Command : Command("cps") {
-    override fun execute(sender: CommandSender, args: Array<String>) {
+// /cps
+object Command : SimpleCommand {
+    override fun execute(invocation: SimpleCommand.Invocation) {
+        val sender = invocation.source()
+        val args = invocation.arguments()
         if (!sender.hasPermission("cps.op")) {
-            sender.send(ChatColor.RED.toString() + "ぽまえけんげんないやろ")
-            return
+            return sender.sendMessage(Component.text("ぽまえけんげんないやろ").color(NamedTextColor.RED))
         }
         // 引数が指定されていない場合 (引数の個数が0以下の場合)
         if (args.isEmpty()) {
-            sender.send(ChatColor.GOLD.toString() + "------------------------使い方------------------------")
-            sender.send(ChatColor.BLUE.toString() + "/" + name + " reload :リロード")
+            sender.sendMessage(Component.text("------------------------使い方------------------------").color(NamedTextColor.GOLD))
+            sender.sendMessage(Component.text("/${invocation.alias()} reload :リロード").color(NamedTextColor.BLUE))
             return
         }
         if (args[0].equals("reload", ignoreCase = true) || args[0].equals("r", ignoreCase = true)) {
             ConnectionPlayerSeparator.CPS.reloadConfig()
-            sender.send(ChatColor.GREEN.toString() + "リロード完了")
-            return
+            sender.sendMessage(Component.text("リロード完了").color(NamedTextColor.GREEN))
         }
     }
 }

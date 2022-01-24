@@ -1,0 +1,10 @@
+{
+  "the_great_comment": "Annotation processor didn't work for some reason so I put this file",
+  "id": "connectionplayerseparator",
+  "name": "ConnectionPlayerSeparator",
+  "version": "",
+  "url": "",
+  "authors": [],
+  "dependencies": [],
+  "main": "net.azisaba.connectionplayerseparator.ConnectionPlayerSeparator"
+}

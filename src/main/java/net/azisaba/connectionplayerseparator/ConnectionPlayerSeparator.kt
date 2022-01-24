@@ -1,19 +1,25 @@
 package net.azisaba.connectionplayerseparator
 
-import net.md_5.bungee.api.ProxyServer
-import net.md_5.bungee.api.config.ServerInfo
-import net.md_5.bungee.api.event.ServerConnectEvent
-import net.md_5.bungee.api.plugin.Listener
-import net.md_5.bungee.api.plugin.Plugin
-import net.md_5.bungee.config.Configuration
-import net.md_5.bungee.config.ConfigurationProvider
-import net.md_5.bungee.config.YamlConfiguration
-import net.md_5.bungee.event.EventHandler
-import java.io.File
+import com.google.common.reflect.TypeToken
+import com.google.inject.Inject
+import com.velocitypowered.api.event.Subscribe
+import com.velocitypowered.api.event.connection.PostLoginEvent
+import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
+import com.velocitypowered.api.plugin.Plugin
+import com.velocitypowered.api.plugin.annotation.DataDirectory
+import com.velocitypowered.api.proxy.ProxyServer
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.NamedTextColor
+import ninja.leaping.configurate.yaml.YAMLConfigurationLoader
+import org.slf4j.Logger
 import java.io.IOException
+import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
-class ConnectionPlayerSeparator : Plugin(), Listener {
+@Plugin(id = "connectionplayerseparator", name = "ConnectionPlayerSeparator")
+open class ConnectionPlayerSeparator(val server: ProxyServer, val logger: Logger, @DataDirectory val dataDirectory: Path, dummy: Void?) {
+    @Inject constructor(server: ProxyServer, logger: Logger, @DataDirectory dataDirectory: Path): this(server, logger, dataDirectory, null)
+
     companion object {
         private val isServerOnline = mutableMapOf<String, Boolean>()
         private val forcedHosts = mutableMapOf<String, String>()
@@ -21,8 +27,8 @@ class ConnectionPlayerSeparator : Plugin(), Listener {
     }
 
     private fun checkOnline() {
-        proxy.servers.values.filter { s: ServerInfo -> isServerOnline.containsKey(s.name) }.forEach { info ->
-            info.ping { _, error -> isServerOnline[info.name] = error == null }
+        server.allServers.filter { s -> isServerOnline.containsKey(s.serverInfo.name) }.forEach { s ->
+            isServerOnline[s.serverInfo.name] = runCatching { s.ping().join() }.isSuccess
         }
     }
 
@@ -31,60 +37,54 @@ class ConnectionPlayerSeparator : Plugin(), Listener {
     }
 
     private var lastLobby = 0
-    @EventHandler
-    fun onConnect(event: ServerConnectEvent) {
-        if (event.reason != ServerConnectEvent.Reason.JOIN_PROXY) return
-        val host = event.player.pendingConnection.virtualHost.hostName
+
+    @Subscribe
+    fun onProxyInitialization(e: ProxyInitializeEvent) {
+        reloadConfig()
+        server.commandManager.register("cps", Command)
+        server.scheduler
+            .buildTask(this) { CPS.checkOnline() }
+            .delay(0, TimeUnit.MILLISECONDS)
+            .repeat(10, TimeUnit.SECONDS)
+            .schedule()
+    }
+
+    @Subscribe
+    fun onLogin(e: PostLoginEvent) {
+        val host = e.player.virtualHost.map { it.hostName }.orElse(null) ?: return
         forcedHosts[host]?.let { targetServer ->
-            val server = ProxyServer.getInstance().getServerInfo(targetServer)
-            if (server == null) {
-                logger.warning("Could not find ServerInfo by $targetServer")
+            val server = this.server.getServer(targetServer)
+            if (!server.isPresent) {
+                logger.warn("Could not find ServerInfo by $targetServer")
                 return@let
             }
-            event.target = server
+            e.player.createConnectionRequest(server.get()).fireAndForget()
             return
         }
         val lobbyServers = isServerOnline.keys
             .filter { s -> isServerOnline[s] ?: false }
-            .map { s -> proxy.getServerInfo(s) }
+            .map { s -> this.server.getServer(s) }
         if (lobbyServers.isEmpty()) {
-            // event.player.disconnect(*TextComponent.fromLegacyText("${ChatColor.RED}接続先のサーバーが見つかりません。"))
-            event.isCancelled = true
+            e.player.disconnect(Component.text("接続先のサーバーが見つかりません。").color(NamedTextColor.RED))
             return
         }
         lastLobby = (lastLobby + 1) % lobbyServers.size
-        event.target = lobbyServers[lastLobby]
-    }
-
-    override fun onEnable() {
-        reloadConfig()
-        proxy.pluginManager.registerListener(this, this)
-        proxy.pluginManager.registerCommand(this, Command)
-        proxy.scheduler.schedule(
-            this,
-            { CPS.checkOnline() },
-            0,
-            10,
-            TimeUnit.SECONDS,
-        )
+        lobbyServers[lastLobby]?.ifPresent { e.player.createConnectionRequest(it).fireAndForget() }
     }
 
     @Suppress("UNCHECKED_CAST")
     fun reloadConfig() {
         isServerOnline.clear()
-        val file = File(dataFolder, "config.yml")
         val config = try {
-            ConfigurationProvider.getProvider(YamlConfiguration::class.java).load(file)
+            YAMLConfigurationLoader.builder().setPath(dataDirectory.resolve("config.yml")).build().load()
         } catch (e: IOException) {
             e.printStackTrace()
             return
         }
-        config.getStringList("Servers").forEach { isServerOnline[it] = false }
-        val forcedHostsIn = Configuration::class.java
-            .getDeclaredField("self")
-            .apply { isAccessible = true }
-            .get(config.getSection("forcedHosts")) as Map<String, Any?>
+        config.getNode("Servers").getList(TypeToken.of(String::class.java)).forEach { isServerOnline[it] = false }
         forcedHosts.clear()
-        forcedHosts.putAll(forcedHostsIn.filterValues { it != null }.mapValues { (_, value) -> value.toString() })
+        config.getNode("forcedHosts").childrenMap.forEach { (key, node) ->
+            forcedHosts[key.toString()] = node.string ?: ""
+        }
     }
 }
