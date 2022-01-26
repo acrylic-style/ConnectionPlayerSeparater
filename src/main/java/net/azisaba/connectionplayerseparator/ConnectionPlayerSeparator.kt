@@ -58,7 +58,9 @@ open class ConnectionPlayerSeparator(val server: ProxyServer, val logger: Logger
                 logger.warn("Could not find ServerInfo by $targetServer")
                 return@let
             }
-            e.player.createConnectionRequest(server.get()).fireAndForget()
+            this.server.scheduler.buildTask(this) {
+                e.player.createConnectionRequest(server.get()).fireAndForget()
+            }.delay(100, TimeUnit.MILLISECONDS).schedule()
             return
         }
         val lobbyServers = isServerOnline.keys
@@ -69,7 +71,11 @@ open class ConnectionPlayerSeparator(val server: ProxyServer, val logger: Logger
             return
         }
         lastLobby = (lastLobby + 1) % lobbyServers.size
-        lobbyServers[lastLobby]?.ifPresent { e.player.createConnectionRequest(it).fireAndForget() }
+        lobbyServers[lastLobby]?.ifPresent {
+            this.server.scheduler.buildTask(this) {
+                e.player.createConnectionRequest(it).fireAndForget()
+            }.delay(100, TimeUnit.MILLISECONDS).schedule()
+        }
     }
 
     @Suppress("UNCHECKED_CAST")
