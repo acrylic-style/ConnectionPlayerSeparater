@@ -3,7 +3,8 @@ package net.azisaba.connectionplayerseparator
 import com.google.common.reflect.TypeToken
 import com.google.inject.Inject
 import com.velocitypowered.api.event.Subscribe
-import com.velocitypowered.api.event.connection.PostLoginEvent
+import com.velocitypowered.api.event.connection.DisconnectEvent
+import com.velocitypowered.api.event.player.ServerPreConnectEvent
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
 import com.velocitypowered.api.plugin.Plugin
 import com.velocitypowered.api.plugin.annotation.DataDirectory
@@ -14,17 +15,14 @@ import ninja.leaping.configurate.yaml.YAMLConfigurationLoader
 import org.slf4j.Logger
 import java.io.IOException
 import java.nio.file.Path
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 @Plugin(id = "connectionplayerseparator", name = "ConnectionPlayerSeparator")
-open class ConnectionPlayerSeparator(val server: ProxyServer, val logger: Logger, @DataDirectory val dataDirectory: Path, dummy: Void?) {
-    @Inject constructor(server: ProxyServer, logger: Logger, @DataDirectory dataDirectory: Path): this(server, logger, dataDirectory, null)
-
-    companion object {
-        private val isServerOnline = mutableMapOf<String, Boolean>()
-        private val forcedHosts = mutableMapOf<String, String>()
-        lateinit var CPS: ConnectionPlayerSeparator
-    }
+open class ConnectionPlayerSeparator @Inject constructor(private val server: ProxyServer, private val logger: Logger, @DataDirectory val dataDirectory: Path) {
+    private val isServerOnline = mutableMapOf<String, Boolean>()
+    private val forcedHosts = mutableMapOf<String, String>()
+    private val firedEvent = mutableSetOf<UUID>()
 
     private fun checkOnline() {
         server.allServers.filter { s -> isServerOnline.containsKey(s.serverInfo.name) }.forEach { s ->
@@ -32,25 +30,23 @@ open class ConnectionPlayerSeparator(val server: ProxyServer, val logger: Logger
         }
     }
 
-    init {
-        CPS = this
-    }
-
     private var lastLobby = 0
 
     @Subscribe
     fun onProxyInitialization(e: ProxyInitializeEvent) {
         reloadConfig()
-        server.commandManager.register("cps", Command)
+        server.commandManager.register("cps", Command(this))
         server.scheduler
-            .buildTask(this) { CPS.checkOnline() }
+            .buildTask(this) { checkOnline() }
             .delay(0, TimeUnit.MILLISECONDS)
             .repeat(10, TimeUnit.SECONDS)
             .schedule()
     }
 
     @Subscribe
-    fun onLogin(e: PostLoginEvent) {
+    fun onServerPreConnectOnLogin(e: ServerPreConnectEvent) {
+        if (e.player.currentServer.isPresent || firedEvent.contains(e.player.uniqueId)) return
+        firedEvent.add(e.player.uniqueId)
         val host = e.player.virtualHost.map { it.hostName }.orElse(null) ?: return
         forcedHosts[host]?.let { targetServer ->
             val server = this.server.getServer(targetServer)
@@ -58,9 +54,7 @@ open class ConnectionPlayerSeparator(val server: ProxyServer, val logger: Logger
                 logger.warn("Could not find ServerInfo by $targetServer")
                 return@let
             }
-            this.server.scheduler.buildTask(this) {
-                e.player.createConnectionRequest(server.get()).fireAndForget()
-            }.delay(100, TimeUnit.MILLISECONDS).schedule()
+            e.result = ServerPreConnectEvent.ServerResult.allowed(server.get()) // server.get() -> life
             return
         }
         val lobbyServers = isServerOnline.keys
@@ -72,10 +66,13 @@ open class ConnectionPlayerSeparator(val server: ProxyServer, val logger: Logger
         }
         lastLobby = (lastLobby + 1) % lobbyServers.size
         lobbyServers[lastLobby]?.ifPresent {
-            this.server.scheduler.buildTask(this) {
-                e.player.createConnectionRequest(it).fireAndForget()
-            }.delay(100, TimeUnit.MILLISECONDS).schedule()
+            e.result = ServerPreConnectEvent.ServerResult.allowed(it)
         }
+    }
+
+    @Subscribe
+    fun onDisconnect(e: DisconnectEvent) {
+        firedEvent.remove(e.player.uniqueId)
     }
 
     @Suppress("UNCHECKED_CAST")

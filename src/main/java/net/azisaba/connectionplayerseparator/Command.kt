@@ -5,7 +5,7 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 
 // /cps
-object Command : SimpleCommand {
+class Command(val cps: ConnectionPlayerSeparator) : SimpleCommand {
     override fun execute(invocation: SimpleCommand.Invocation) {
         val sender = invocation.source()
         val args = invocation.arguments()
@@ -19,7 +19,7 @@ object Command : SimpleCommand {
             return
         }
         if (args[0].equals("reload", ignoreCase = true) || args[0].equals("r", ignoreCase = true)) {
-            ConnectionPlayerSeparator.CPS.reloadConfig()
+            cps.reloadConfig()
             sender.sendMessage(Component.text("リロード完了").color(NamedTextColor.GREEN))
         }
     }
