@@ -2,6 +2,7 @@ package net.azisaba.connectionplayerseparator
 
 import com.google.common.reflect.TypeToken
 import com.google.inject.Inject
+import com.velocitypowered.api.event.PostOrder
 import com.velocitypowered.api.event.Subscribe
 import com.velocitypowered.api.event.connection.DisconnectEvent
 import com.velocitypowered.api.event.player.ServerPreConnectEvent
@@ -43,7 +44,7 @@ open class ConnectionPlayerSeparator @Inject constructor(private val server: Pro
             .schedule()
     }
 
-    @Subscribe
+    @Subscribe(order = PostOrder.EARLY)
     fun onServerPreConnectOnLogin(e: ServerPreConnectEvent) {
         if (e.player.currentServer.isPresent || firedEvent.contains(e.player.uniqueId)) return
         firedEvent.add(e.player.uniqueId)
@@ -56,6 +57,9 @@ open class ConnectionPlayerSeparator @Inject constructor(private val server: Pro
             }
             e.result = ServerPreConnectEvent.ServerResult.allowed(server.get()) // server.get() -> life
             return
+        }
+        if (isServerOnline.isEmpty()) {
+            return // "Servers" is empty
         }
         val lobbyServers = isServerOnline.keys
             .filter { s -> isServerOnline[s] ?: false }
